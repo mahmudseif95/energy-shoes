@@ -25,18 +25,31 @@ interface ShoeFormData {
 export default function ControlRoom() {
   const [formData, setFormData] = useState<ShoeFormData>({
     brand: 'Nike',
-    model_name: 'Air Max Tailwind',
+    model_name: '',
     art_number: '',
     target_group: 'رجالي',
     shoe_type: 'سنيكرز يومي',
     size_eu: '42',
     condition_grade: 'أخو الجديد',
     cost_price: '',
-    selling_price: '45'
+    selling_price: ''
   });
 
+  // ستيت خاصة بالصورة
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  
   const [loading, setLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: string; text: string }>({ type: '', text: '' });
+
+  // معالجة اختيار الصورة ورؤيتها لايف قبل الرفع
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file)); // عمل رابط مؤقت للمعاينة
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +57,28 @@ export default function ControlRoom() {
     setMessage({ type: '', text: '' });
 
     try {
+      let uploadedImageUrl = '';
+
+      // 1. إذا المستخدم منقي صورة، نرفعها أولاً للـ Storage Bucket
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { data: storageData, error: storageError } = await supabase.storage
+          .from('shoe-images')
+          .upload(fileName, imageFile);
+
+        if (storageError) throw storageError;
+
+        // سحب الرابط المباشر للعلامة المرفوعة
+        const { data: publicUrlData } = supabase.storage
+          .from('shoe-images')
+          .getPublicUrl(fileName);
+
+        uploadedImageUrl = publicUrlData.publicUrl;
+      }
+
+      // 2. إدخال كل البيانات مع رابط الصورة المرفوعة إلى جدول الداتابيز
       const { error } = await supabase
         .from('shoes_inventory')
         .insert([
@@ -56,22 +91,26 @@ export default function ControlRoom() {
             size_eu: parseFloat(formData.size_eu),
             condition_grade: formData.condition_grade,
             cost_price: formData.cost_price ? parseFloat(formData.cost_price) : null,
-            selling_price: parseFloat(formData.selling_price)
+            selling_price: parseFloat(formData.selling_price),
+            images_urls: uploadedImageUrl ? [uploadedImageUrl] : null // حفظ الرابط بصفوف الداتابيز
           }
         ]);
 
       if (error) throw error;
 
-      setMessage({ type: 'success', text: '🎉 يا عيني ع النظافة! الحذاء طار ع المخزن وصار لايف.' });
+      setMessage({ type: 'success', text: '🎉 يا عيني ع الفخامة! الحذاء وصورته طاروا عالمخزن بنجاح لايف.' });
       
+      // تصفير الفورم والصور بعد النجاح
       setFormData(prev => ({
         ...prev,
         model_name: '',
         art_number: '',
-        size_eu: '',
+        size_eu: '42',
         cost_price: '',
         selling_price: ''
       }));
+      setImageFile(null);
+      setImagePreview('');
 
     } catch (error: any) {
       if (error.code === '23505') {
@@ -96,12 +135,12 @@ export default function ControlRoom() {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-slate-900">SHOES</h1>
-              <p className="text-xs text-slate-500 font-medium">غرفة التحكم بالمخزون الأونلاين</p>
+              <p className="text-xs text-slate-500 font-medium">غرفة التحكم بالمخزون والألبوم</p>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-bold border border-emerald-200">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            السيرفر متصل أونلاين
+            السيرفر متصل والمخزن جاهز
           </div>
         </div>
       </header>
@@ -109,11 +148,11 @@ export default function ControlRoom() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* لوحة الإدخال الخارقة (7 أعمدة) */}
+          {/* لوحة الإدخال (7 أعمدة) */}
           <div className="lg:col-span-7 bg-white rounded-3xl shadow-xl border border-slate-150 p-6 md:p-8">
             <div className="mb-6">
               <h2 className="text-lg font-bold text-slate-900">إضافة قطعة جديدة للمخزن</h2>
-              <p className="text-sm text-slate-500">كل الحقول المميزة بنجمة (*) ضرورية لتظهر للزبون.</p>
+              <p className="text-sm text-slate-500">ارفع صورة الحذاء وعبّي بياناته ليظهر فوراً أونلاين.</p>
             </div>
 
             {message.text && (
@@ -124,6 +163,24 @@ export default function ControlRoom() {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               
+              {/* خانة رفع الصورة الجديدة 📸 */}
+              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 bg-slate-50/50 hover:bg-slate-50 transition-all text-center">
+                <label className="cursor-pointer block space-y-2">
+                  <span className="text-3xl block">📸</span>
+                  <span className="text-xs font-bold text-slate-700 block">اضغط هنا لاختيار صورة الحذاء الأوروبي</span>
+                  <span className="text-[10px] text-slate-400 block">صيغ الصور المدعومة: PNG, JPG, WEBP</span>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleImageChange}
+                  />
+                </label>
+                {imageFile && (
+                  <p className="text-xs text-emerald-600 font-bold mt-2">✅ تم اختيار: {imageFile.name}</p>
+                )}
+              </div>
+
               {/* الماركة والنوع */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -179,7 +236,7 @@ export default function ControlRoom() {
                 </div>
               </div>
 
-              {/* الفئة كأزرار مودرن */}
+              {/* الفئة */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2">الجنس / الفئة</label>
                 <div className="grid grid-cols-3 gap-3">
@@ -204,7 +261,6 @@ export default function ControlRoom() {
                     type="number" 
                     step="0.5"
                     required
-                    placeholder="مثال: 42.5"
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white transition-all font-medium"
                     value={formData.size_eu}
                     onChange={(e) => setFormData({...formData, size_eu: e.target.value})}
@@ -220,113 +276,114 @@ export default function ControlRoom() {
                         type="button"
                         className={`text-xs p-3.5 rounded-2xl font-black border transition-all ${formData.condition_grade === grade ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
                         onClick={() => setFormData({...formData, condition_grade: grade})}
-                  >
-                    {grade}
-                  </button>
-                ))}
+                      >
+                        {grade}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+
+              {/* الأسعار */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2">سعر التكلفة ماليًا ($)</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    placeholder="مخفي عن الزبون"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white transition-all font-medium"
+                    value={formData.cost_price}
+                    onChange={(e) => setFormData({...formData, cost_price: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">سعر البيع المعروض للزبون ($) *</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    className="w-full bg-amber-50/50 border border-amber-200 rounded-2xl p-3.5 text-slate-950 font-black text-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white transition-all"
+                    value={formData.selling_price}
+                    onChange={(e) => setFormData({...formData, selling_price: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full p-4 rounded-2xl font-black text-slate-950 bg-gradient-to-r from-yellow-400 to-amber-400 hover:from-yellow-300 hover:to-amber-300 transition-all text-md shadow-lg shadow-yellow-400/20 flex items-center justify-center gap-2 ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                {loading ? '🚀 جاري رفع الصورة وتأمين القطعة...' : '💾 إدخال فوري للمخزن وحفظ'}
+              </button>
+
+            </form>
           </div>
 
-          {/* الأسعار */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-5">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-2">سعر التكلفة ماليًا ($)</label>
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="مخفي عن الزبون"
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white transition-all font-medium"
-                value={formData.cost_price}
-                onChange={(e) => setFormData({...formData, cost_price: e.target.value})}
-              />
+          {/* المعاينة المباشرة (5 أعمدة) */}
+          <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
+            <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-md flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 tracking-wider">Live Store Preview</span>
+              <span className="text-[10px] bg-yellow-400/20 text-yellow-400 font-bold px-2 py-0.5 rounded-full">كرت الزبون لايف</span>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">سعر البيع المعروض للزبون ($) *</label>
-              <input 
-                type="number" 
-                step="0.01"
-                required
-                placeholder="0.00"
-                className="w-full bg-amber-50/50 border border-amber-200 rounded-2xl p-3.5 text-slate-950 font-black text-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white transition-all"
-                value={formData.selling_price}
-                onChange={(e) => setFormData({...formData, selling_price: e.target.value})}
-              />
-            </div>
-          </div>
+            {/* كرت الحذاء الفخم */}
+            <div className="bg-white rounded-3xl overflow-hidden shadow-xl border border-slate-150 transition-all duration-300 hover:shadow-2xl">
+              <div className="relative bg-slate-100 aspect-[4/3] flex items-center justify-center border-b border-slate-100 overflow-hidden">
+                
+                {/* هنا السحر: إذا منقي صورة حتبين فوراً، وإذا لأ بيبين بليس هولدر */}
+                {imagePreview ? (
+                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center space-y-2">
+                    <span className="text-4xl block text-slate-400">👟</span>
+                    <p className="text-xs font-bold text-slate-400">لم تختر صورة بعد</p>
+                  </div>
+                )}
+                
+                <span className="absolute top-4 right-4 bg-orange-600 text-white font-black text-[10px] px-3 py-1 rounded-full shadow-md">
+                  {formData.condition_grade}
+                </span>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full p-4 rounded-2xl font-black text-slate-950 bg-gradient-to-r from-yellow-400 to-amber-400 hover:from-yellow-300 hover:to-amber-300 transition-all text-md shadow-lg shadow-yellow-400/20 flex items-center justify-center gap-2 ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
-          >
-            {loading ? 'جاري تأمين القطعة بالداتابيز...' : '💾 إدخال فوري للمخزن وحفظ'}
-          </button>
-
-        </form>
-      </div>
-
-      {/* الـ Live Preview الشيك (5 أعمدة) */}
-      <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
-        <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-md flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Live Store Preview</span>
-          <span className="text-[10px] bg-yellow-400/20 text-yellow-400 font-bold px-2 py-0.5 rounded-full">معاينة مباشرة كرت الزبون</span>
-        </div>
-
-        {/* كرت الحذاء الفخم */}
-        <div className="bg-white rounded-3xl overflow-hidden shadow-xl border border-slate-150 transition-all duration-300 hover:shadow-2xl">
-          <div className="relative bg-slate-100 aspect-[4/3] flex items-center justify-center p-8 border-b border-slate-100">
-            {/* بليس هولدر الصورة لحد ما نبرمج الرفع */}
-            <div className="text-center space-y-2">
-              <span className="text-4xl block text-slate-400">👟</span>
-              <p className="text-xs font-bold text-slate-400">معاينة صورة الحذاء</p>
-              <p className="text-[10px] text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full">بانتظار تفعيل الـ Storage</p>
-            </div>
-            
-            {/* تاغ النظافة الفخم */}
-            <span className="absolute top-4 right-4 bg-orange-600 text-white font-black text-[10px] px-3 py-1 rounded-full shadow-md">
-              {formData.condition_grade}
-            </span>
-
-            {/* تاغ الجنس */}
-            <span className="absolute top-4 left-4 bg-slate-900/10 text-slate-800 font-bold text-[10px] px-2.5 py-1 rounded-full backdrop-blur-sm">
-              {formData.target_group}
-            </span>
-          </div>
-
-          {/* تفاصيل الحذاء الفخمة */}
-          <div className="p-5 space-y-4">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{formData.brand || 'الماركة'}</span>
-                <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-lg border border-slate-200">
-                  مقاس: <span className="font-mono font-bold">{formData.size_eu || '--'}</span>
+                <span className="absolute top-4 left-4 bg-slate-900/10 text-slate-800 font-bold text-[10px] px-2.5 py-1 rounded-full backdrop-blur-sm">
+                  {formData.target_group}
                 </span>
               </div>
-              <h3 className="text-lg font-black text-slate-900 mt-1">
-                {formData.model_name || 'اسم الموديل حيكون هون'}
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5 font-medium">{formData.shoe_type}</p>
-            </div>
 
-            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400">السعر الأوريجينال</p>
-                <p className="text-2xl font-black text-slate-950 font-mono mt-0.5">
-                  ${formData.selling_price || '0'}
-                </p>
+              <div className="p-5 space-y-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{formData.brand || 'الماركة'}</span>
+                    <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-lg border border-slate-200">
+                      مقاس: <span className="font-mono font-bold">{formData.size_eu || '--'}</span>
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 mt-1">
+                    {formData.model_name || 'اسم الموديل حيكون هون'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5 font-medium">{formData.shoe_type}</p>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400">السعر المعروض</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-0.5">
+                      ${formData.selling_price || '0'}
+                    </p>
+                  </div>
+                  <button type="button" className="bg-slate-900 text-white font-black text-xs px-5 py-3 rounded-xl shadow-md">
+                    شراء سريع 🛍️
+                  </button>
+                </div>
               </div>
-              <button type="button" className="bg-slate-900 hover:bg-slate-800 text-white font-black text-xs px-5 py-3 rounded-xl transition-all shadow-md">
-                شراء سريع 🛍️
-              </button>
             </div>
           </div>
-        </div>
-      </div>
 
+        </div>
+      </main>
     </div>
-  </main>
-</div>
   );
 }
